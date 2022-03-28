@@ -1,0 +1,22 @@
+#!/bin/bash
+
+set -euo pipefail
+cd "$(dirname "$0")"
+
+set +e
+archive="$(find archives -type f -name '*.tar.gpg' 2>/dev/null | head -1)"
+set -e
+
+if [ -z "$archive" ]; then
+  echo >&2 "ERROR: no archive found."
+  exit 1
+fi
+
+if [ -d "files" ]; then
+  echo >&2 "ERROR: files directory already exists."
+  exit 1
+fi
+
+echo "Extracting $archive to files..."
+
+gpg --quiet --decrypt "$archive" | tar --extract

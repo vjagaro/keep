@@ -1,0 +1,50 @@
+#!/bin/bash
+
+KEEP=3
+
+set -euo pipefail
+cd "$(dirname "$0")"
+
+if ! [ -d "files" ]; then
+  echo >&2 "ERROR: files directory does not exist."
+  exit 1
+fi
+
+mkdir -p archives
+
+archive="archives/files-$(date +%Y-%m-%d-%H-%M-%S).tar.gpg"
+
+if [ -f "$archive" ]; then
+  echo >&2 "ERROR: archive already exists '$archive'."
+  exit 1
+fi
+
+echo "Encrypting files to $archive..."
+
+tar c files | gpg --output "$archive" --symmetric
+
+echo -n "Verifying..."
+
+rm -rf .verify
+mkdir .verify
+gpg --quiet --decrypt "$archive" | tar --extract --directory=.verify
+
+if ! diff --brief --recursive files .verify/files >/dev/null; then
+  echo "failed!"
+  exit 1
+fi
+
+rm -rf .verify
+
+echo "success."
+
+for name in $(ls -1t archives | tail --lines +4); do
+  archive="archives/$name"
+  echo -n "Removing old archive $archive..."
+  rm -f "$archive"
+  echo
+done
+
+echo -n "Removing files..."
+rm -rf files
+echo

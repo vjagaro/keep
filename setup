@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -euo pipefail
+cd "$(dirname "$0")"
+
+_rt_detect_termux() {
+  test -f "$HOME/../usr/etc/termux-login.sh"
+}
+
+if _rt_detect_termux; then
+  pkg install gnupg
+else
+  sudo apt-get install -qqy gnupg
+fi
+
+mkdir -p archives files
+
+if ! [ -d "$HOME/.gnupg/private-keys-v1.d" ]; then
+  gpg --full-generate-key
+fi
