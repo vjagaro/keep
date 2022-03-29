@@ -14,7 +14,3 @@ else
 fi
 
 mkdir -p archives files
-
-if ! [ -d "$HOME/.gnupg/private-keys-v1.d" ]; then
-  gpg --full-generate-key
-fi
