@@ -1,9 +1,13 @@
 #!/bin/bash
 
-KEEP=3
-
 set -euo pipefail
 cd "$(dirname "$0")"
+
+_rt_detect_termux() {
+  test -f "$HOME/../usr/etc/termux-login.sh"
+}
+
+KEEP=3
 
 if ! [ -d "files" ]; then
   echo >&2 "ERROR: files directory does not exist."
@@ -18,6 +22,8 @@ if [ -f "$archive" ]; then
   echo >&2 "ERROR: archive already exists '$archive'."
   exit 1
 fi
+
+_rt_detect_termux && export GPG_TTY="$(tty)"
 
 echo "Encrypting files to $archive..."
 
@@ -38,7 +44,7 @@ rm -rf .verify
 
 echo "success."
 
-for name in $(ls -1t archives | tail --lines +4); do
+for name in $(ls -1t archives | tail --lines +$((KEEP + 1))); do
   archive="archives/$name"
   echo -n "Removing old archive $archive..."
   rm -f "$archive"
