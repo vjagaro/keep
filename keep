@@ -1,0 +1,194 @@
+#!/bin/bash
+
+set -euo pipefail
+
+usage() {
+  cat >&2 <<EOF
+Usage: $0 [OPTIONS] encrypt DIRECTORY [FILE]
+       $0 [OPTIONS] decrypt FILE [DIRECTORY]
+
+Simple directory encryption using GnuPG --symmetric.
+
+Optional arguments:
+  -f, --force                Overwrite target file or directory
+  -u, --remove               Remove the source after encryption/decryption
+  -q, --quiet                Suppress output
+  -x, --gpg-executable=PATH  Command or path to gpg binary (default: gpg)
+  -h, --help                 This help text
+EOF
+}
+
+_error() {
+  echo >&2 "$@"
+  echo >&2 "Try '$0 --help' for more information."
+  exit 1
+}
+
+_gpg() {
+  "$GPG_EXECUTABLE" "$@"
+}
+
+_is_termux() {
+  test -f "$HOME/../usr/etc/termux-login.sh"
+}
+
+_out() {
+  [ -n "$QUIET" ] || echo "$@"
+}
+
+_require_arg() {
+  [ $# -ge 1 ] || _error "Missing argument to $1"
+}
+
+COMMAND=
+SOURCE=
+TARGET=
+FORCE=
+REMOVE=
+QUIET=
+GPG_EXECUTABLE=gpg
+
+# Fix gpg-agent on termux during symmetric encryption
+_is_termux && export GPG_TTY="$(tty)"
+
+while [ $# -gt 0 ]; do
+  ARG="$1"
+  shift
+  if [[ "$ARG" =~ ^(--[^=]+)=(.*)$ ]]; then
+    set -- "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "$@"
+  fi
+  case "$ARG" in
+  -f | --force)
+    FORCE=1
+    ;;
+  -u | --remove)
+    REMOVE=1
+    ;;
+  -q | --quiet)
+    QUIET=1
+    ;;
+  -x | --gpg-executable)
+    _require_arg "$@"
+    GPG_EXECUTABLE="$1"
+    shift
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  -*)
+    if [ ${#ARG} -gt 2 -a "${ARG:1:1}" != - ]; then
+      i=$((${#ARG} - 1))
+      while [ $i -ge 1 ]; do
+        set -- "-${ARG:$i:1}" "$@"
+        i=$((i - 1))
+      done
+    else
+      _error "Unknown option '$ARG'"
+    fi
+    ;;
+  *)
+    if [ -n "$TARGET" ]; then
+      _error "Unexpected argument '$ARG'"
+    elif [ -n "$SOURCE" ]; then
+      TARGET="$ARG"
+    elif [ -n "$COMMAND" ]; then
+      SOURCE="$ARG"
+    else
+      case "$ARG" in
+      en*)
+        COMMAND=encrypt
+        ;;
+      de*)
+        COMMAND=decrypt
+        ;;
+      *)
+        _error "Unknown command '$ARG'"
+        ;;
+
+      esac
+    fi
+    ;;
+  esac
+done
+
+if [ -z "$COMMAND" ]; then
+  _error "Expected 'encrypt' or 'decrypt' argument"
+fi
+
+if [ $COMMAND = encrypt ]; then
+
+  [ -n "$SOURCE" ] || _error "Expected DIRECTORY argument"
+  [ -d "$SOURCE" ] || _error "Not a directory: $SOURCE"
+
+  [ -n "$TARGET" ] || TARGET="$SOURCE.gpg"
+
+  TARGET_FULL="$(realpath "$TARGET")"
+  [ -e "$TARGET_FULL" -a -z "$FORCE" ] && _error "Exists: $TARGET"
+
+  _out -n "Encrypting $SOURCE..."
+  (
+    cd "$SOURCE"
+    [ -e "$TARGET_FULL" -a -n "$FORCE" ] && rm -f "$TARGET_FULL"
+    tar -c . | gpg --quiet --symmetric --output "$TARGET_FULL"
+  )
+  _out
+
+  VERIFY="$(mktemp -d -p "$(dirname "$TARGET_FULL")")"
+
+  _out -n "Verifying..."
+  (
+    cd "$VERIFY"
+    gpg --quiet --decrypt "$TARGET_FULL" | tar -x
+  )
+
+  diff -qr "$SOURCE" "$VERIFY" >/dev/null
+  result=$?
+
+  rm -rf "$VERIFY"
+
+  if [ $result = 0 ]; then
+    _out
+  else
+    _out "failed!"
+    exit 1
+  fi
+
+  if [ -n "$REMOVE" ]; then
+    _out -n "Removing $SOURCE..."
+    rm -rf "$SOURCE"
+    _out
+  fi
+
+  _out "Encrypted archive at: $TARGET"
+
+else # decrypt
+
+  [ -n "$SOURCE" ] || _error "Expected FILE argument"
+  [ -f "$SOURCE" ] || _error "Not a file: $SOURCE"
+
+  if [ -z "$TARGET" ]; then
+    TARGET="${SOURCE%.gpg}"
+    [ "$TARGET" = "$SOURCE" ] && _error "Expected .gpg suffix: $SOURCE"
+  fi
+  [ -e "$TARGET" -a -z "$FORCE" ] && _error "Exists: $TARGET"
+
+  SOURCE_FULL="$(realpath "$SOURCE")"
+
+  _out -n "Decrypting $SOURCE..."
+  (
+    mkdir -p "$TARGET"
+    cd "$TARGET"
+    gpg --quiet --decrypt "$SOURCE_FULL" | tar -x
+  )
+  _out
+
+  if [ -n "$REMOVE" ]; then
+    _out -n "Removing $SOURCE..."
+    rm -f "$SOURCE"
+    _out
+  fi
+
+  _out "Decrypted directory at: $TARGET"
+
+fi
