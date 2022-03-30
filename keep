@@ -37,7 +37,7 @@ _out() {
 }
 
 _require_arg() {
-  [ $# -ge 1 ] || _error "Missing argument to $1"
+  [ $# -ge 2 ] || _error "Missing argument to $1"
 }
 
 COMMAND=
@@ -68,7 +68,7 @@ while [ $# -gt 0 ]; do
     QUIET=1
     ;;
   -x | --gpg-executable)
-    _require_arg "$@"
+    _require_arg "$ARG" "$@"
     GPG_EXECUTABLE="$1"
     shift
     ;;
