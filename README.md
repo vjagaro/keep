@@ -4,40 +4,29 @@ Simple directory encryption using GnuPG `--symmetric`.
 
 ## Usage
 
-Encrypt `files` to `files.gpg`:
 
 ```sh
-keep encrypt files
-```
+# encrypt secrets directory to secrets.gpg
+keep encrypt secrets
 
-Decrypt `files.gpg` to `files`:
+# decrypt secrets.gpg to secrets directory
+keep decrypt secrets.gpg
 
-```sh
-keep decrypt files.gpg
-```
+# encrypt secrets directory to foo/bar.gpg, then remove secrets
+keep enc -u secrets foo/bar.gpg 
 
-Encrypt `files` to `foo/bar.gpg`, then remove `files`:
-
-```
-keep enc -u files foo/bar.gpg
-```
-
-Decrypt `foo/bar.gpg` to `a/b/c`, overwriting files in that directory:
-
-```sh
+# decrypt foo/bar.gpg to a/b/c directory, overwriting any files therein
 keep dec -f foo/bar.gpg a/b/c
-```
 
-More usage information:
-
-```sh
+# additional help
 keep --help
 ```
 
 ## Install
 
 ```sh
-sudo apt-get install bash gnupg # or sudo yum install bash gnupg
+sudo apt-get install bash gnupg
+# or sudo yum install bash gnupg
 sudo wget -O /usr/local/bin/keep \
   https://raw.githubusercontent.com/vjagaro/keep/main/keep
 sudo chmod 755 /usr/local/bin/keep
