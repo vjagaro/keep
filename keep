@@ -119,33 +119,44 @@ fi
 if [ $COMMAND = encrypt ]; then
 
   [ -n "$SOURCE" ] || _error "Expected DIRECTORY argument"
-  [ -d "$SOURCE" ] || _error "Not a directory: $SOURCE"
 
-  [ -n "$TARGET" ] || TARGET="$SOURCE.gpg"
+  SOURCE_PATH="$(realpath "$SOURCE")"
 
-  TARGET_FULL="$(realpath "$TARGET")"
-  [ -e "$TARGET_FULL" -a -z "$FORCE" ] && _error "Exists: $TARGET"
+  if [ -z "$TARGET" ]; then
+    TARGET_PATH="$SOURCE_PATH.gpg"
+    TARGET="$(realpath --relative-base . "$TARGET_PATH")"
+  else
+    TARGET_PATH="$(realpath "$TARGET")"
+  fi
+
+  if ! [ -d "$SOURCE_PATH" ]; then
+    _error "Not a directory: $SOURCE"
+  elif [ -e "$TARGET_PATH" ]; then
+    if [ -d "$TARGET_PATH" -o -z "$FORCE" ]; then
+      _error "Exists: $TARGET"
+    else
+      rm -f "$TARGET_PATH"
+    fi
+  fi
 
   _out -n "Encrypting $SOURCE..."
   (
-    cd "$SOURCE"
-    [ -e "$TARGET_FULL" -a -n "$FORCE" ] && rm -f "$TARGET_FULL"
-    tar -c . | gpg --quiet --symmetric --output "$TARGET_FULL"
-  )
+    cd "$SOURCE_PATH"
+    tar -c .
+  ) | gpg --quiet --symmetric --output "$TARGET_PATH"
   _out
 
-  VERIFY="$(mktemp -d -p "$(dirname "$TARGET_FULL")")"
+  VERIFY_PATH="$(mktemp -d -p "$(dirname "$TARGET_PATH")")"
 
   _out -n "Verifying..."
-  (
-    cd "$VERIFY"
-    gpg --quiet --decrypt "$TARGET_FULL" | tar -x
+  gpg --quiet --decrypt "$TARGET_PATH" | (
+    cd "$VERIFY_PATH"
+    tar -x
   )
 
-  diff -qr "$SOURCE" "$VERIFY" >/dev/null
+  diff -qr "$SOURCE_PATH" "$VERIFY_PATH" >/dev/null
   result=$?
-
-  rm -rf "$VERIFY"
+  rm -rf "$VERIFY_PATH"
 
   if [ $result = 0 ]; then
     _out
@@ -156,7 +167,7 @@ if [ $COMMAND = encrypt ]; then
 
   if [ -n "$REMOVE" ]; then
     _out -n "Removing $SOURCE..."
-    rm -rf "$SOURCE"
+    rm -rf "$SOURCE_PATH"
     _out
   fi
 
@@ -165,27 +176,38 @@ if [ $COMMAND = encrypt ]; then
 else # decrypt
 
   [ -n "$SOURCE" ] || _error "Expected FILE argument"
-  [ -f "$SOURCE" ] || _error "Not a file: $SOURCE"
+
+  SOURCE_PATH="$(realpath "$SOURCE")"
 
   if [ -z "$TARGET" ]; then
-    TARGET="${SOURCE%.gpg}"
-    [ "$TARGET" = "$SOURCE" ] && _error "Expected .gpg suffix: $SOURCE"
+    TARGET_PATH="${SOURCE_PATH%.gpg}"
+    [ "$TARGET_PATH" = "$SOURCE_PATH" ] && _error "Indeterminate output directory"
+    TARGET="$(realpath --relative-base . "$TARGET_PATH")"
+  else
+    TARGET_PATH="$(realpath "$TARGET")"
   fi
-  [ -e "$TARGET" -a -z "$FORCE" ] && _error "Exists: $TARGET"
 
-  SOURCE_FULL="$(realpath "$SOURCE")"
+  if ! [ -f "$SOURCE_PATH" ]; then
+    _error "Not a file: $SOURCE"
+  elif [ -e "$TARGET_PATH" ]; then
+    if [ -z "$FORCE" ]; then
+      _error "Exists: $TARGET"
+    elif ! [ -d "$TARGET_PATH" ]; then
+      rm -f "$TARGET_PATH"
+    fi
+  fi
 
   _out -n "Decrypting $SOURCE..."
-  (
-    mkdir -p "$TARGET"
-    cd "$TARGET"
-    gpg --quiet --decrypt "$SOURCE_FULL" | tar -x
+  gpg --quiet --decrypt "$SOURCE_PATH" | (
+    mkdir -p "$TARGET_PATH"
+    cd "$TARGET_PATH"
+    tar -x
   )
   _out
 
   if [ -n "$REMOVE" ]; then
     _out -n "Removing $SOURCE..."
-    rm -f "$SOURCE"
+    rm -f "$SOURCE_PATH"
     _out
   fi
 
