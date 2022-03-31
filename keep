@@ -4,8 +4,8 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<EOF
-Usage: $0 [OPTIONS] encrypt DIRECTORY [FILE]
-       $0 [OPTIONS] decrypt FILE [DIRECTORY]
+Usage: keep [OPTIONS] encrypt DIRECTORY [FILE]
+       keep [OPTIONS] decrypt FILE [DIRECTORY]
 
 Simple directory encryption using GnuPG --symmetric.
 
@@ -19,8 +19,8 @@ EOF
 }
 
 _error() {
-  echo >&2 "$@"
-  echo >&2 "Try '$0 --help' for more information."
+  [ $# -gt 0 ] && echo >&2 "keep: $@"
+  echo >&2 "Try 'keep --help' for more information."
   exit 1
 }
 
@@ -36,27 +36,21 @@ _out() {
   [ -n "$QUIET" ] || echo "$@"
 }
 
-_require_arg() {
-  [ $# -ge 2 ] || _error "Missing argument to $1"
-}
-
-COMMAND=
-SOURCE=
-TARGET=
-FORCE=
-REMOVE=
-QUIET=
-GPG_EXECUTABLE=gpg
-
 # Fix gpg-agent on termux during symmetric encryption
 _is_termux && export GPG_TTY="$(tty)"
+
+declare {COMMAND,SOURCE,TARGET,FORCE,REMOVE,QUIET}=
+GPG_EXECUTABLE=gpg
+
+opts="$(
+  getopt -n keep -o fuqx:h -l \
+    force,remove,quiet,gpg-executable:,help -- "$@"
+)" || _error
+eval set -- $opts
 
 while [ $# -gt 0 ]; do
   ARG="$1"
   shift
-  if [[ "$ARG" =~ ^(--[^=]+)=(.*)$ ]]; then
-    set -- "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "$@"
-  fi
   case "$ARG" in
   -f | --force)
     FORCE=1
@@ -68,7 +62,6 @@ while [ $# -gt 0 ]; do
     QUIET=1
     ;;
   -x | --gpg-executable)
-    _require_arg "$ARG" "$@"
     GPG_EXECUTABLE="$1"
     shift
     ;;
@@ -76,49 +69,43 @@ while [ $# -gt 0 ]; do
     usage
     exit 0
     ;;
-  -*)
-    if [ ${#ARG} -gt 2 -a "${ARG:1:1}" != - ]; then
-      i=$((${#ARG} - 1))
-      while [ $i -ge 1 ]; do
-        set -- "-${ARG:$i:1}" "$@"
-        i=$((i - 1))
-      done
-    else
-      _error "Unknown option '$ARG'"
-    fi
-    ;;
-  *)
-    if [ -n "$TARGET" ]; then
-      _error "Unexpected argument '$ARG'"
-    elif [ -n "$SOURCE" ]; then
-      TARGET="$ARG"
-    elif [ -n "$COMMAND" ]; then
-      SOURCE="$ARG"
-    else
-      case "$ARG" in
-      en*)
-        COMMAND=encrypt
-        ;;
-      de*)
-        COMMAND=decrypt
-        ;;
-      *)
-        _error "Unknown command '$ARG'"
-        ;;
-
-      esac
-    fi
+  --)
+    break
     ;;
   esac
 done
 
+while [ $# -gt 0 ]; do
+  ARG="$1"
+  shift
+  if [ -n "$TARGET" ]; then
+    _error "unexpected argument '$ARG'"
+  elif [ -n "$SOURCE" ]; then
+    TARGET="$ARG"
+  elif [ -n "$COMMAND" ]; then
+    SOURCE="$ARG"
+  else
+    case "$ARG" in
+    en*)
+      COMMAND=encrypt
+      ;;
+    de*)
+      COMMAND=decrypt
+      ;;
+    *)
+      _error "unknown command '$ARG'"
+      ;;
+    esac
+  fi
+done
+
 if [ -z "$COMMAND" ]; then
-  _error "Expected 'encrypt' or 'decrypt' argument"
+  _error "expected 'encrypt' or 'decrypt' argument"
 fi
 
 if [ $COMMAND = encrypt ]; then
 
-  [ -n "$SOURCE" ] || _error "Expected DIRECTORY argument"
+  [ -n "$SOURCE" ] || _error "expected DIRECTORY argument"
 
   SOURCE_PATH="$(realpath "$SOURCE")"
 
@@ -130,10 +117,10 @@ if [ $COMMAND = encrypt ]; then
   fi
 
   if ! [ -d "$SOURCE_PATH" ]; then
-    _error "Not a directory: $SOURCE"
+    _error "not a directory: $SOURCE"
   elif [ -e "$TARGET_PATH" ]; then
     if [ -d "$TARGET_PATH" -o -z "$FORCE" ]; then
-      _error "Exists: $TARGET"
+      _error "exists: $TARGET"
     else
       rm -f "$TARGET_PATH"
     fi
@@ -175,23 +162,23 @@ if [ $COMMAND = encrypt ]; then
 
 else # decrypt
 
-  [ -n "$SOURCE" ] || _error "Expected FILE argument"
+  [ -n "$SOURCE" ] || _error "expected FILE argument"
 
   SOURCE_PATH="$(realpath "$SOURCE")"
 
   if [ -z "$TARGET" ]; then
     TARGET_PATH="${SOURCE_PATH%.gpg}"
-    [ "$TARGET_PATH" = "$SOURCE_PATH" ] && _error "Indeterminate output directory"
+    [ "$TARGET_PATH" = "$SOURCE_PATH" ] && _error "indeterminate output directory"
     TARGET="$(realpath --relative-base . "$TARGET_PATH")"
   else
     TARGET_PATH="$(realpath "$TARGET")"
   fi
 
   if ! [ -f "$SOURCE_PATH" ]; then
-    _error "Not a file: $SOURCE"
+    _error "not a file: $SOURCE"
   elif [ -e "$TARGET_PATH" ]; then
     if [ -z "$FORCE" ]; then
-      _error "Exists: $TARGET"
+      _error "exists: $TARGET"
     elif ! [ -d "$TARGET_PATH" ]; then
       rm -f "$TARGET_PATH"
     fi
